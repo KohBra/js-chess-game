@@ -1,45 +1,58 @@
 
-const W = 'white';
-const B = 'red';
+const W = 'white'
+const B = 'red'
 
-const clamp = function (num, min, max) {
-    return Math.min(Math.max(min, num), max)
-}
+const clamp = (num, min, max) => Math.min(Math.max(min, num), max)
+
+const clone = obj => JSON.parse(JSON.stringify(obj))
+const oppositeColor = color => color === W ? B : W
+var chess = null
 
 class Game
 {
-    constructor () {
-        this[B] = this.newPlayer(B)
-        this[W] = this.newPlayer(W)
-        this.players = [
-            this[B],
-            this[W],
-        ]
-        this.board = new Board
-        this.turn = null
-    }
     static start () {
         let game = new Game
+        chess = game
         game.setStartingPieces()
         game.nextTurn()
         return game
     }
 
+    constructor () {
+        this[B] = this.newPlayer(B)
+        this[W] = this.newPlayer(W)
+        this.board = new Board
+        this.turn = null
+        this.turnCount = 0
+    }
+
     nextTurn () {
+        // Clear En Passant moves from the previous turn
+        this.board.clearEnPassant(this.turnCount)
+        // Change turn
+        this.changeTurn()
+        // Calculate last players available moves to find checks
+        this.board.calculateMoves(this[oppositeColor(this.turn)], this)
+        this.board.calculateChecks(this[this.turn]);
+        // Calculate next players moves now
+        this.board.calculateMoves(this[this.turn], this)
+        // Show the board
+        this.board.show()
+
+        let player = this[this.turn]
+        console.log(`${this.turn}'s move${this.board.check ? ', checked' : ''}`)
+    }
+    changeTurn () {
         switch (this.turn) {
             case W:
                 this.turn = B
-                break;
+                break
             case B:
             case null:
                 this.turn = W
-                break;
+                break
         }
-        // Swap turn, and calculate all their moves
-        this.board.calculateMoves(this.turn)
-        this.board.show()
-        let player = this[this.turn]
-        console.log(`${this.turn}'s move${player.inCheck ? ', checked' : ''}`)
+        this.turnCount++
     }
 
     // Make a move by notation: "Qd4"
@@ -48,11 +61,11 @@ class Game
     }
     // Move piece at x to y
     moveD (from, to) {
-        this.move(Move.convertDefaultNotation(this, from, to))
+        this.move(Move.getValidMove(this, from, to))
     }
     // Force move piece at x to y, even if invalid
     moveF (from, to) {
-        this.doMove(Move.convertDefaultNotation(this, from, to));
+        this.doMove(Move.convertDefaultNotation(this, from, to))
         this.nextTurn()
     }
     // Execute a given move on the game board
@@ -61,20 +74,24 @@ class Game
             this.doMove(move)
             this.nextTurn()
         } else {
-            throw new Error('Invalid move');
+            throw new Error('Invalid move')
         }
     }
     doMove (move) {
+        if (move instanceof SpecialMove) {
+            return move.execute(this)
+        }
+
         if (this.board.hasPieceAt(move.position)) {
             this.capturePiece(this.board.at(move.position))
         }
+
         this.board.movePiece(move)
-        // this.calculateAttacks()
     }
     capturePiece (piece) {
         this[this.turn].capturedPieces.push(piece)
         this[this.turn === W ? B : W].removePiece(piece)
-        // piece.position = new Position(piece.position.v, piece.position.h)
+        this.board.removePiece(piece.position)
     }
     isValidMove (move) {
         if (move.piece === null) {
@@ -88,16 +105,6 @@ class Game
         return move.isValid(this.board, this.turn)
     }
 
-    calculateAttacks () {
-        this[W].calculateAttacks(this.board)
-        this[B].calculateAttacks(this.board)
-        this.calculateChecks()
-    }
-    calculateChecks () {
-        this[W].calculateChecks(this[B].attacks)
-        this[B].calculateChecks(this[W].attacks)
-    }
-
     newPlayer (color) {
         return new Player(color)
     }
@@ -105,8 +112,8 @@ class Game
     setStartingPieces () {
         this[B].setPieces(this.startingPieces(8, 7, B))
         this[W].setPieces(this.startingPieces(1, 2, W))
-        this.board.addPieces(this[B].pieces);
-        this.board.addPieces(this[W].pieces);
+        this.board.addPieces(this[B].pieces)
+        this.board.addPieces(this[W].pieces)
     }
 
     startingPieces (homeRow, pawnRow, color) {
@@ -138,6 +145,9 @@ class Board
         this.height = height
         this.pieces = {[W]: [], [B]: []}
         this.moves = {[W]: new MoveSet(), [B]: new MoveSet()}
+        this.enPassantPosition = null
+        this.enPassantTurn = null
+        this.check = null
         this.board = []
         for (let i = 1; i <= height; i++) {
             for (let j = 1; j <= width; j++) {
@@ -152,9 +162,21 @@ class Board
 
     addPieces (pieces) {
         pieces.forEach(piece => {
-            this.pieces[piece.color].push(piece);
-            this.board[piece.position.v][piece.position.h] = piece;
+            this.pieces[piece.color].push(piece)
+            this.board[piece.position.v][piece.position.h] = piece
         })
+    }
+    removePiece (v, h) {
+        let piece = this.at(v, h)
+
+        if (piece) {
+            if (v instanceof Position) {
+                this.board[v.v][v.h] = null
+            } else {
+                this.board[v][h] = null
+            }
+            this.pieces[piece.color].splice(this.pieces[piece.color].indexOf(piece), 1)
+        }
     }
 
     at (v, h) {
@@ -177,22 +199,83 @@ class Board
         this.board[move.position.v][move.position.h] = move.piece
         move.piece.moved()
     }
-
-    calculateMoves (color) {
-        this.moves[color] = new MoveSet()
-        this.pieces[color].forEach(piece => {
-            this.moves[color].combine(piece.getPotentialMoves(this))
-        })
+    setEnPassantPosition (position, turnCount) {
+        this.enPassantPosition = position
+        this.enPassantTurn = turnCount
     }
-    hasAttack (color, position) {
-        return this.moves[color].attacks.filter(move => {
-            move.position.equals(position)
+    clearEnPassant (turnCount) {
+        if (this.enPassantPosition !== null && this.enPassantTurn < turnCount) {
+            this.enPassantPosition = null
+            this.enPassantTurn = null
+        }
+    }
+
+    calculateChecks (player) {
+        if (this.hasAttack(player.color, player.getKing().position)) {
+            this.check = player.color
+        } else {
+            this.check = null
+        }
+    }
+    calculateMoves (player, game, limitByChecks = true) {
+        let moves = new MoveSet()
+        this.pieces[player.color].forEach(piece => {
+            moves.combine(piece.getPotentialMoves(this))
+        })
+
+        if (limitByChecks && this.check === player.color) {
+            let movesOutOfCheck = moves.moves.filter(move => {
+                return this.simulateMove(game, move, player).check === null
+            })
+            moves = new MoveSet()
+            moves.addMoves(movesOutOfCheck)
+        }
+
+        this.moves[player.color] = moves
+    }
+    // Check if the enemy can move to specific position
+    hasMove (color, position) {
+        return this.moves[oppositeColor(color)].moves.filter(move => {
+            return move.position.equals(position)
         }).length > 0
+    }
+    // Check if the enemy has an attack against the specified position
+    hasAttack (color, position) {
+        return this.moves[oppositeColor(color)].getAttackingMoves().filter(move => {
+            return move.position.equals(position)
+        }).length > 0
+    }
+    // Check if the enemy could potentially attack against the specified position
+    canAttack (color, position) {
+        return this.hasMove(color, position) || this.hasAttack(color, position)
+    }
+
+    simulateMove (game, move, player) {
+        move = move.clone()
+        let board = this.clone()
+        if (move.isAttack) {
+            board.removePiece(move.position)
+        }
+        board.movePiece(move)
+        board.calculateMoves(game[oppositeColor(player.color)], game, false)
+        board.calculateChecks(player)
+    }
+
+    clone () {
+        let board = new Board()
+        board.addPieces(this.pieces[W].map(piece => piece.clone()))
+        board.addPieces(this.pieces[B].map(piece => piece.clone()))
+        board.moves = {[W]: this.moves[W].clone(), [B]: this.moves[B].clone()}
+        board.enPassantPosition = this.enPassantPosition
+        board.enPassantTurn = this.enPassantTurn
+        board.check = this.check
+        return board
     }
 
     show () {
+        console.log("%c   A    B    C    D    E    F    G    H", 'font-size:12px')
         for (let i = 1; i <= this.height; i++) {
-            let row = `${i}  `;
+            let row = `${i}  `
             let colors = []
             for (let j = 1; j <= this.width; j++) {
                 let piece = this.at(i, j)
@@ -200,7 +283,7 @@ class Board
                 colors.push(piece ? piece.color : 'grey')
             }
 
-            console.log(row, ...colors.map(color => `color:${color}`));
+            console.log(row, ...colors.map(color => `color:${color};font-size:20px`))
         }
     }
 }
@@ -250,8 +333,6 @@ class Player
         this.color = color
         this.pieces = []
         this.capturedPieces = []
-        this.attacks = null
-        this.inCheck = false
     }
 
     setPieces (pieces) {
@@ -266,38 +347,29 @@ class Player
     getKing () {
         return this.getPiecesOfType(KING)[0]
     }
-
-    calculateAttacks (board) {
-        let attacks = new MoveSet
-        this.pieces.forEach(piece => {
-            let moves = piece.getPotentialMoves(board)
-            attacks.combine(moves.getAttackingMoves(board))
-        })
-
-        this.attacks = attacks
-    }
-
-    calculateChecks (enemyAttacks) {
-        this.inCheck = enemyAttacks.hasMove(this.getKing().position)
-    }
 }
 
 class MoveSet
 {
     constructor () {
         this.moves = []
-        this.attacks = []
+    }
+    clone () {
+        let moveSet = new MoveSet()
+        this.moves.forEach(move => {
+            moveSet.add(move.clone())
+        })
+        return moveSet
     }
     add (move) {
         if (!move instanceof Move) {
             return
         }
 
-        if (move.isAttack) {
-            this.attacks.push(move)
-        }
-
         this.moves.push(move)
+    }
+    addMoves (moves) {
+        moves.forEach(move => this.add(move))
     }
     hasMove (move) {
         let moves = this.getMovesToPosition(move.position)
@@ -311,12 +383,32 @@ class MoveSet
         return this.moves.filter(move => move.position.equals(position))
     }
     getAttackingMoves () {
-        return this.attacks
+        return this.moves.filter(move => move.isAttack)
     }
 
     combine (moveSet) {
         this.moves = this.moves.concat(moveSet.moves)
-        this.attacks = this.attacks.concat(moveSet.attacks)
+    }
+
+    show () {
+        for (let i = 1; i <= 8; i++) {
+            let row = `${i}  `
+            let colors = []
+            for (let j = 1; j <= 8; j++) {
+                let moves = this.getMovesToPosition(new Position(i, j))
+                if (moves.length === 0) {
+                    row += `%c-  `
+                    colors.push('grey')
+                    continue
+                }
+
+                let hasAttack = moves.reduce((hasAttack, move) => hasAttack || (hasAttack = move.isAttack), false)
+                row += `%c${hasAttack ? 'X' : 'M'}  `
+                colors.push(hasAttack ? 'red' : 'white')
+            }
+
+            console.log(row, ...colors.map(color => `color:${color};font-size:20px`))
+        }
     }
 }
 
@@ -328,12 +420,16 @@ class Move
         this.isAttack = isAttack
     }
 
+    clone () {
+        return new this.constructor(this.piece.clone(), new Position(this.position.v, this.position.h), this.isAttack)
+    }
+
     isValid (board, turn) {
         return this.piece.getPotentialMoves(board, turn).hasMove(this)
     }
 
     static convertMoveNotation (game, str) {
-        str = str.toLowerCase();
+        str = str.toLowerCase()
         let pieceType = Piece.getTypeByNotation(str.substring(0, 1))
         let h = clamp(Position.convertHorizontalNotation(str.substr(-2, 1)), 1, 8)
         let v = clamp(parseInt(str.substr(-1)), 1, 8)
@@ -428,7 +524,7 @@ class Move
             if (specificPieces.length === 1) {
                 return new Move(pieces[0], new Position(move.v, move.h))
             } else if (specificPieces.length === 0) {
-                throw new Error('Invalid move', move);
+                throw new Error('Invalid move', move)
             }
         }
 
@@ -439,10 +535,22 @@ class Move
         if (pieces.length === 1) {
             return new Move(pieces[0], new Position(move.v, move.h))
         } else if (pieces.length === 0) {
-            throw new Error('Invalid move', move);
+            throw new Error('Invalid move', move)
         } else {
             throw new Error('Invalid move, too vague', move)
         }
+    }
+
+    static getValidMove (game, from, to) {
+        let move = Move.convertDefaultNotation(game, from, to)
+        let moves = move.piece.getPotentialMoves(game.board)
+
+        if (moves.hasMove(move)) {
+            // use the provided move, it may be a special type
+            return moves.getMovesToPosition(move.position)[0]
+        }
+
+        throw new Error(`Invalid move from ${from} to ${to}`)
     }
 
     static convertDefaultNotation (game, from, to) {
@@ -451,23 +559,88 @@ class Move
         let toV = clamp(parseInt(to.substr(-1)), 1, 8)
         let toH = clamp(Position.convertHorizontalNotation(to.substr(0, 1)), 1, 8)
 
-        let piece = game.board.at(fromV, fromH);
+        let piece = game.board.at(fromV, fromH)
+        let finalPosition = new Position(toV, toH)
 
-        if (piece !== undefined) {
-            return new Move(piece, new Position(toV, toH))
-        }
+        return new Move(piece, finalPosition)
+    }
+}
 
-        throw new Error(`Invalid move from ${from} to ${to}`)
+class SpecialMove extends Move
+{
+    execute (game) {
+        throw new Error('Implement execute')
+    }
+}
+
+class KingsideCastle extends SpecialMove
+{
+    execute (game) {
+        game.board.movePiece(this)
+        game.board.movePiece(
+            new Move(
+                game.board.at(this.piece.position.v, 8),
+                new Position(this.piece.position.v, this.piece.position.h - 1)
+            )
+        )
+    }
+}
+
+class QueensideCastle extends SpecialMove
+{
+    execute (game) {
+        game.board.movePiece(this)
+        game.board.movePiece(
+            new Move(
+                game.board.at(this.piece.position.v, 1),
+                new Position(this.piece.position.v, this.piece.position.h + 1)
+            )
+        )
+    }
+}
+
+class PawnAdvance extends SpecialMove
+{
+    execute (game) {
+        game.board.setEnPassantPosition(
+            new Position(this.piece.position.v + this.piece.getDirection(), this.piece.position.h),
+            game.turnCount
+        )
+        game.board.movePiece(this)
+    }
+}
+
+class EnPassant extends SpecialMove
+{
+    execute (game) {
+        game.board.movePiece(this)
+        let enemyPawnPos = new Position(this.position.v + (this.piece.getDirection() * -1), this.position.h)
+        game.capturePiece(game.board.at(enemyPawnPos))
+        game.board.removePiece(enemyPawnPos)
+    }
+}
+
+class Promotion extends SpecialMove
+{
+    execute (game) {
+        game.board.movePiece(this)
+        game.board.addPieces([new Queen(this.position, this.piece.color)])
     }
 }
 
 class Piece
 {
-    constructor (position) {
+    constructor (position, color = null) {
         this.position = position
         this.type = this.getType()
-        this.color = null
+        this.color = color
         this.hasMoved = false
+    }
+
+    clone () {
+        let piece = new this.constructor(new Position(this.position.v, this.position.h), this.color)
+        piece.hasMoved = this.hasMoved
+        return piece
     }
 
     static getTypeByNotation (char) {
@@ -534,11 +707,17 @@ class Piece
                     moveSet.add(new Move(this, position, true))
                 }
 
-                break;
+                break
             } else {
                 moveSet.add(new Move(this, position))
             }
         }
+    }
+
+    filterPins (moveSet, board) {
+        moveSet.moves = moveSet.moves.filter(move => {
+            board.simulateMove(chess, move, chess[move.piece.color])
+        })
     }
 }
 
@@ -551,8 +730,8 @@ const QUEEN = 'Queen'
 
 class Pawn extends Piece
 {
-    constructor (position) {
-        super(position)
+    constructor (position, color = null) {
+        super(position, color)
         this.originalV = position.v
     }
 
@@ -561,32 +740,49 @@ class Pawn extends Piece
     }
 
     getCharacter () {
-        return 'P'
+        return '\u2659'
     }
 
     canPotentialMoveTo (v, h) {
         return h === this.position.h
     }
 
+    getDirection () {
+        return this.originalV === 2 ? 1 : -1
+    }
+
     getPotentialMoves (board) {
         let moveSet = new MoveSet
 
-        let direction = this.originalV === 2 ? 1 : -1;
+        let direction = this.getDirection()
 
-        this.addMoveIfEnemyAt(board, moveSet, new Position(this.position.v + direction, this.position.h - 1))
-        this.addMoveIfEnemyAt(board, moveSet, new Position(this.position.v + direction, this.position.h + 1))
+        let attackLeft = new Position(this.position.v + direction, this.position.h - 1)
+        let attackRight = new Position(this.position.v + direction, this.position.h + 1)
+        this.addMoveIfEnemyAt(board, moveSet, attackLeft)
+        this.addMoveIfEnemyAt(board, moveSet, attackRight)
+
+        if (board.enPassantPosition !== null &&
+            (board.enPassantPosition.equals(attackLeft) ||
+            board.enPassantPosition.equals(attackRight))
+        ) {
+            moveSet.add(new EnPassant(this, board.enPassantPosition, true))
+        }
 
         if (board.hasPieceAt(this.position.v + direction, this.position.h)) {
             return moveSet
         }
 
-        moveSet.add(new Move(this, new Position(this.position.v + direction, this.position.h)))
-
-        if (this.position.v === this.originalV && !board.hasPieceAt(this.position.v + (direction * 2), this.position.h)) {
-            moveSet.add(new Move(this, new Position(this.position.v + (direction * 2), this.position.h)))
+        if (this.position.v === this.originalV + (direction * 5)) {
+            moveSet.add(new Promotion(this, new Position(this.position.v + direction, this.position.h)))
+        } else {
+            moveSet.add(new Move(this, new Position(this.position.v + direction, this.position.h)))
         }
 
-        return moveSet
+        if (this.position.v === this.originalV && !board.hasPieceAt(this.position.v + (direction * 2), this.position.h)) {
+            moveSet.add(new PawnAdvance(this, new Position(this.position.v + (direction * 2), this.position.h)))
+        }
+
+        return this.filterPins(moveSet, board)
     }
 }
 
@@ -597,18 +793,22 @@ class Rook extends Piece
     }
 
     getCharacter () {
-        return 'R'
+        return '\u2656'
     }
 
     getPotentialMoves (board) {
         let moveSet = new MoveSet
 
-        this.addMovesUntilPiece(board, moveSet, board.width - this.position.h, i => new Position(this.position.v, this.position.h + i))
-        this.addMovesUntilPiece(board, moveSet, this.position.h - 1, i => new Position(this.position.v, this.position.h - i))
-        this.addMovesUntilPiece(board, moveSet, board.height - this.position.v, i => new Position(this.position.v + i, this.position.h))
-        this.addMovesUntilPiece(board, moveSet, this.position.v - 1, i => new Position(this.position.v - i, this.position.h))
+        Rook.addRookMoves(this, board, moveSet)
 
         return moveSet
+    }
+
+    static addRookMoves (piece, board, moveSet) {
+        piece.addMovesUntilPiece(board, moveSet, board.width - piece.position.h, i => new Position(piece.position.v, piece.position.h + i))
+        piece.addMovesUntilPiece(board, moveSet, piece.position.h - 1, i => new Position(piece.position.v, piece.position.h - i))
+        piece.addMovesUntilPiece(board, moveSet, board.height - piece.position.v, i => new Position(piece.position.v + i, piece.position.h))
+        piece.addMovesUntilPiece(board, moveSet, piece.position.v - 1, i => new Position(piece.position.v - i, piece.position.h))
     }
 }
 
@@ -619,7 +819,7 @@ class Knight extends Piece
     }
 
     getCharacter () {
-        return 'N'
+        return '\u2658'
     }
 
     getPotentialMoves (board) {
@@ -649,69 +849,22 @@ class Bishop extends Piece
     }
 
     getCharacter () {
-        return 'B'
+        return '\u2657'
     }
 
     getPotentialMoves (board) {
         let moveSet = new MoveSet
 
-        this.addMovesUntilPiece(board, moveSet, Math.min(board.height - this.position.v, board.width - this.position.h), i => new Position(this.position.v + i, this.position.h + i))
-        this.addMovesUntilPiece(board, moveSet, Math.min(this.position.v - 1, board.width - this.position.h), i => new Position(this.position.v - i, this.position.h + i))
-        this.addMovesUntilPiece(board, moveSet, Math.min(board.height - this.position.v, this.position.h - 1), i => new Position(this.position.v + i, this.position.h - i))
-        this.addMovesUntilPiece(board, moveSet, Math.min(this.position.v - 1, this.position.h - 1), i => new Position(this.position.v - i, this.position.h - i))
-        // for (let i = 1; i <= Math.min(board.height - this.position.v, board.width - this.position.h); i++) {
-        //     let piece = board.at(this.position.v + i, this.position.h + i).piece
-        //     if (piece) {
-        //         if (piece.color !== this.color) {
-        //             moveSet.add(this.position.v + i, this.position.h + i)
-        //         }
-        //
-        //         break;
-        //     } else {
-        //         moveSet.add(this.position.v + i, this.position.h + i)
-        //     }
-        // }
-
-        // for (let i = 1; i < Math.min(this.position.v, board.width - this.position.h); i++) {
-        //     let piece = board.at(this.position.v - i, this.position.h + i).piece
-        //     if (piece) {
-        //         if (piece.color !== this.color) {
-        //             moveSet.add(this.position.v - i, this.position.h + i)
-        //         }
-        //
-        //         break;
-        //     } else {
-        //         moveSet.add(this.position.v - i, this.position.h + i)
-        //     }
-        // }
-
-        // for (let i = 1; i <= Math.min(board.height - this.position.v, this.position.h); i++) {
-        //     let piece = board.at(this.position.v + i, this.position.h - i).piece
-        //     if (piece) {
-        //         if (piece.color !== this.color) {
-        //             moveSet.add(this.position.v + i, this.position.h - i)
-        //         }
-        //
-        //         break;
-        //     } else {
-        //         moveSet.add(this.position.v + i, this.position.h - i)
-        //     }
-        // }
-
-        // for (let i = 1; i < Math.min(this.position.v, this.position.h); i++) {
-        //     let piece = board.at(this.position.v - i, this.position.h - i).piece
-        //     if (piece) {
-        //         if (piece.color !== this.color) {
-        //             moveSet.add(this.position.v - i, this.position.h - i)
-        //         }
-        //
-        //         break;
-        //     } else {
-        //         moveSet.add(this.position.v - i, this.position.h - i)
-        //     }
-        // }
+        Bishop.addBishopMoves(this, board, moveSet)
 
         return moveSet
+    }
+    
+    static addBishopMoves (piece, board, moveSet) {
+        piece.addMovesUntilPiece(board, moveSet, Math.min(board.height - piece.position.v, board.width - piece.position.h), i => new Position(piece.position.v + i, piece.position.h + i))
+        piece.addMovesUntilPiece(board, moveSet, Math.min(piece.position.v - 1, board.width - piece.position.h), i => new Position(piece.position.v - i, piece.position.h + i))
+        piece.addMovesUntilPiece(board, moveSet, Math.min(board.height - piece.position.v, piece.position.h - 1), i => new Position(piece.position.v + i, piece.position.h - i))
+        piece.addMovesUntilPiece(board, moveSet, Math.min(piece.position.v - 1, piece.position.h - 1), i => new Position(piece.position.v - i, piece.position.h - i))
     }
 }
 
@@ -722,7 +875,7 @@ class King extends Piece
     }
 
     getCharacter () {
-        return 'K'
+        return '\u2654'
     }
 
     getPotentialMoves (board) {
@@ -740,40 +893,50 @@ class King extends Piece
 
         positions.forEach(pos => this.addMoveIfEnemyOrEmptyAt(board, moveSet, pos))
 
-        if (this.canKingCastle(board)) {
-            moveSet.add(new Move(this, new Position(this.position.v, this.position.h + 2)))
+        if (this.canKingsideCastle(board)) {
+            moveSet.add(new KingsideCastle(this, new Position(this.position.v, this.position.h + 2)))
         }
 
-        // if (this.canQueenCastle(board)) {
-        //     moveSet.add(new Move(this, new Position(this.position.v, this.position.h - 3)))
-        // }
+        if (this.canQueensideCastle(board)) {
+            moveSet.add(new QueensideCastle(this, new Position(this.position.v, this.position.h - 3)))
+        }
 
         return moveSet
     }
 
-    canKingCastle (board) {
-        // check king hasn't moved.
-        // check rook hasn't moved.
-        // check no pieces
-        // check not in check and won't move through check
-        let rook = board.at(this.position.v, 8)
-        if (this.hasMoved || rook.hasMoved) {
-            return false
-        }
-
+    canKingsideCastle (board) {
         let positions = [
             new Position(this.position.v, this.position.h + 1),
             new Position(this.position.v, this.position.h + 2),
         ]
 
-        if (positions.reduce((hasPiecesBetween, pos) => hasPiecesBetween = board.hasPieceAt(pos), false)) {
+        return this.canCastle(board, 8, positions)
+    }
+
+    canQueensideCastle (board) {
+        let positions = [
+            new Position(this.position.v, this.position.h - 1),
+            new Position(this.position.v, this.position.h - 2),
+            new Position(this.position.v, this.position.h - 3),
+        ]
+
+        return this.canCastle(board, 1, positions)
+    }
+
+    canCastle (board, hRookPosition, positions) {
+        let rook = board.at(this.position.v, hRookPosition)
+        if (rook === null || rook.hasMoved || this.hasMoved) {
             return false
         }
 
-        // Add current position for attack checks
+        if (positions.reduce((hasPiecesBetween, pos) => hasPiecesBetween || (hasPiecesBetween = board.hasPieceAt(pos)), false)) {
+            return false
+        }
+
+        // Add current king position for attack checks
         positions.push(this.position)
 
-        if (positions.reduce((hasAttacksAgainst, pos) => hasAttacksAgainst = board.hasAttack(this.color, pos), false)) {
+        if (positions.reduce((hasAttacksAgainst, pos) => hasAttacksAgainst || (hasAttacksAgainst = board.canAttack(this.color, pos)), false)) {
             return false
         }
 
@@ -788,22 +951,14 @@ class Queen extends Piece
     }
 
     getCharacter () {
-        return 'Q'
+        return '\u2655'
     }
 
     getPotentialMoves (board) {
         let moveSet = new MoveSet
 
-        // Rook
-        this.addMovesUntilPiece(board, moveSet, board.width - this.position.h, i => new Position(this.position.v, this.position.h + i))
-        this.addMovesUntilPiece(board, moveSet, this.position.h - 1, i => new Position(this.position.v, this.position.h - i))
-        this.addMovesUntilPiece(board, moveSet, board.height - this.position.v, i => new Position(this.position.v + i, this.position.h))
-        this.addMovesUntilPiece(board, moveSet, this.position.v - 1, i => new Position(this.position.v - i, this.position.h))
-        // Bishop
-        this.addMovesUntilPiece(board, moveSet, Math.min(board.height - this.position.v, board.width - this.position.h), i => new Position(this.position.v + i, this.position.h + i))
-        this.addMovesUntilPiece(board, moveSet, Math.min(this.position.v - 1, board.width - this.position.h), i => new Position(this.position.v - i, this.position.h + i))
-        this.addMovesUntilPiece(board, moveSet, Math.min(board.height - this.position.v, this.position.h - 1), i => new Position(this.position.v + i, this.position.h - i))
-        this.addMovesUntilPiece(board, moveSet, Math.min(this.position.v - 1, this.position.h - 1), i => new Position(this.position.v - i, this.position.h - i))
+        Rook.addRookMoves(this, board, moveSet)
+        Bishop.addBishopMoves(this, board, moveSet)
 
         return moveSet
     }
