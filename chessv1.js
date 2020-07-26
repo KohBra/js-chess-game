@@ -1,4 +1,7 @@
-
+/* Version 1
+ * Pieces are movable with general moves, but no pins/checks/checkmates work
+ * Bad
+ */
 const W = 'white'
 const B = 'red'
 
@@ -144,7 +147,7 @@ class Board
         this.width = width
         this.height = height
         this.pieces = {[W]: [], [B]: []}
-        this.moves = {[W]: new MoveSet(), [B]: new MoveSet()}
+        this.moves = {[W]: new Moveset, [B]: new Moveset}
         this.enPassantPosition = null
         this.enPassantTurn = null
         this.check = null
@@ -218,7 +221,7 @@ class Board
         }
     }
     calculateMoves (player, game, limitByChecks = true) {
-        let moves = new MoveSet()
+        let moves = new Moveset
         this.pieces[player.color].forEach(piece => {
             moves.combine(piece.getPotentialMoves(this))
         })
@@ -227,7 +230,7 @@ class Board
             let movesOutOfCheck = moves.moves.filter(move => {
                 return this.simulateMove(game, move, player).check === null
             })
-            moves = new MoveSet()
+            moves = new Moveset
             moves.addMoves(movesOutOfCheck)
         }
 
@@ -355,7 +358,7 @@ class MoveSet
         this.moves = []
     }
     clone () {
-        let moveSet = new MoveSet()
+        let moveSet = new Moveset
         this.moves.forEach(move => {
             moveSet.add(move.clone())
         })
