@@ -1,13 +1,22 @@
-import { boardSize, KING, KNIGHT, PAWN } from './const.js'
+import { black, boardSize, KING, KNIGHT, PAWN, white } from './const.js'
 import Position from './Position.js'
 import { oppositeColor } from './helpers.js'
 import MoveSet from './MoveSet.js'
+import { Check, CheckMate, Stalemate } from './exception.js'
 
 export class Board
 {
     board = []
     pieces = []
     enPassant = null
+    currentMoves = {
+        [white]: new MoveSet(),
+        [black]: new MoveSet(),
+    }
+    currentPins = {
+        [white]: new MoveSet(),
+        [black]: new MoveSet(),
+    }
 
     constructor () {
         for (let rank = 1; rank <= boardSize; rank++) {
@@ -70,20 +79,55 @@ export class Board
     }
 
     calculateMoves (player) {
-        let enemies = this.playersPieces(oppositeColor(player.color))
+        let teamPieces = this.playersPieces(player.color)
+        let enemyPieces = this.playersPieces(oppositeColor(player.color))
         let enemyPins = new MoveSet
         let enemyMoves = new MoveSet
-        enemies.forEach(piece => {
+        let validMoves = new MoveSet
+
+        let setTeamMoves = () => {
+            let pieceMoves = validMoves.moves.reduce((pieceMoves, move) => {
+                if (!pieceMoves.get(move.piece)) {
+                    pieceMoves.set(move.piece, [])
+                }
+                pieceMoves.get(move.piece).push(move)
+                return pieceMoves
+            }, new WeakMap)
+
+            teamPieces.forEach(piece => {
+                let moveSet = new MoveSet()
+                if (pieceMoves.has(piece)) {
+                    moveSet.addMoves(pieceMoves.get(piece))
+                }
+                piece.setPotentialMoves(moveSet)
+            })
+            this.currentMoves[player.color] = validMoves
+        }
+
+        enemyPieces.forEach(piece => {
             let pinningMoves = piece.getPinningMoves(this)
-            let potentialMoves = piece.getPotentialMoves(this)
             enemyPins.combine(pinningMoves)
-            enemyMoves.combine(potentialMoves)
         })
 
-        let validMoves = new MoveSet
-        let checkMoves = enemyMoves.getMovesToPosition(player.king.position)
-        if (checkMoves.length > 0) {
-            console.log(`${player.color} in check`)
+        enemyPieces.forEach(piece => {
+            let potentialMoves = piece.getPotentialMoves(this)
+            enemyMoves.combine(potentialMoves)
+
+            piece.setProtected(enemyPins.hasMoveToPosition(piece.position))
+            piece.setPotentialMoves(potentialMoves)
+        })
+
+        teamPieces.forEach(piece => {
+            let attacks = enemyMoves.getMovesToPosition(piece.position)
+            piece.setAttacked(attacks.length > 0)
+            piece.setPinned(piece.type === KING && enemyPins.getMovesToPosition(piece.position).length > 0)
+        })
+
+        this.currentMoves[oppositeColor(player.color)] = enemyMoves
+        this.currentPins[oppositeColor(player.color)] = enemyPins
+
+        if (player.king.isUnderAttack()) {
+            let checkMoves = enemyMoves.getMovesToPosition(player.king.position)
             validMoves = player.king.getPotentialMoves(this)
             // King can't move into checks (can't move to empty space that's attacked, or take an enemy piece that's protected
             validMoves.filter(move => !enemyMoves.hasMoveToPosition(move.to) && !enemyPins.hasMoveToPosition(move.to))
@@ -100,37 +144,33 @@ export class Board
                     )
                 }
 
-                this.playersPieces(player.color).forEach(piece => {
+                teamPieces.forEach(piece => {
                     if (piece.type === KING) {
                         return
                     }
 
                     let validPositions = [...validMovePositions]
-                    if (enemyPins.hasMoveToPosition(piece.position)) {
+                    if (piece.isPinned()) {
                         // A pinned piece can't save a check
                         validPositions = []
                     }
 
                     let moveSet = piece.getPotentialMoves(this)
-                    moveSet.moves.forEach(move => {
-                        if (validPositions.findIndex(position => position.equals(move.to)) < 0) {
-                            return
-                        }
-
-                        validMoves.add(move)
-                    })
+                    moveSet.filter(move => validPositions.findIndex(position => position.equals(move.to)) >= 0)
+                    validMoves.combine(moveSet)
                 })
             }
 
             if (validMoves.length === 0) {
                 // check mate
-                throw new Error(`${player.color} check mated. gg`)
+                throw new CheckMate
             }
 
-            return validMoves
+            setTeamMoves()
+            throw new Check
         }
 
-        this.playersPieces(player.color).forEach(piece => {
+        teamPieces.forEach(piece => {
             let validPositions = []
             let pinMove = enemyPins.getMovesToPosition(piece.position)
             if (piece.type !== KING && pinMove.length > 0) {
@@ -150,8 +190,11 @@ export class Board
             )
         })
 
-        // validMoves.show()
-        return validMoves
+        setTeamMoves()
+
+        if (validMoves.length === 0) {
+            throw new Stalemate
+        }
     }
 
     executeMove (move) {
@@ -174,20 +217,5 @@ export class Board
 
     clearEnPassant () {
         this.enPassant = null
-    }
-
-    show () {
-        console.log('%c   A    B    C    D    E    F    G    H', 'font-size:12px')
-        for (let rank = 1; rank < this.board.length; rank++) {
-            let row = `${rank}  `
-            let colors = []
-            for (let file = 1; file < this.board[rank].length; file++) {
-                let piece = this.at(rank, file)
-                row += `%c${piece ? piece.getCharacter() : '- '} `
-                colors.push(piece ? piece.getColor() : 'grey')
-            }
-
-            console.log(row, ...colors.map(color => `color:${color};font-size:20px`))
-        }
     }
 }

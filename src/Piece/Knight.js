@@ -9,8 +9,8 @@ export default class Knight extends Piece
 {
     type = KNIGHT
 
-    getCharacter () {
-        return '\u2658'
+    getValue () {
+        return 3
     }
 
     getMovePositions () {
@@ -27,7 +27,7 @@ export default class Knight extends Piece
     }
 
     getPinningMoves (board) {
-        let moves = new Moveset
+        let moves = new MoveSet
 
         this.getMovePositions().forEach(position => {
             if (!board.isValidPosition(position)) {
@@ -45,7 +45,7 @@ export default class Knight extends Piece
     }
 
     getPotentialMoves (board) {
-        let moves = new Moveset
+        let moves = new MoveSet
 
         this.getMovePositions().forEach(position => {
             if (!board.isValidPosition(position)) {

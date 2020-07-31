@@ -7,18 +7,18 @@ export default class Rook extends Piece
 {
     type = ROOK
 
-    getCharacter () {
-        return '\u2656'
+    getValue () {
+        return 5
     }
 
     getPinningMoves (board) {
-        let moves = new Moveset
+        let moves = new MoveSet
         addPinVectors(getCardinalVectors, this, moves, board)
         return moves
     }
 
     getPotentialMoves (board) {
-        let moves = new Moveset
+        let moves = new MoveSet
         addMoveVectors(getCardinalVectors, this, moves, board)
         return moves
     }

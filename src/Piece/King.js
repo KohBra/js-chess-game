@@ -11,8 +11,8 @@ export default class King extends Piece
 {
     type = KING
 
-    getCharacter () {
-        return '\u2654'
+    getValue () {
+        return 4
     }
 
     getMovePositions () {
@@ -29,7 +29,7 @@ export default class King extends Piece
     }
 
     getPinningMoves (board) {
-        let moves = new Moveset
+        let moves = new MoveSet
 
         this.getMovePositions().forEach(position => {
             if (!board.isValidPosition(position)) {
@@ -47,7 +47,7 @@ export default class King extends Piece
     }
 
     getPotentialMoves (board) {
-        let moves = new Moveset
+        let moves = new MoveSet
 
         this.getMovePositions().forEach(position => {
             if (!board.isValidPosition(position)) {
@@ -85,7 +85,6 @@ export default class King extends Piece
         let positions = [
             new Position(this.position.rank, this.position.file - 1),
             new Position(this.position.rank, this.position.file - 2),
-            new Position(this.position.rank, this.position.file - 3),
         ]
 
         return this.canCastle(board, 1, positions)
@@ -107,11 +106,8 @@ export default class King extends Piece
 
         positions.push(this.position)
 
-        //todo fix after pieces know if they are under attack
-        // if (positions.reduce((hasAttacksAgainst, pos) => hasAttacksAgainst || (hasAttacksAgainst = board.canAttack(this.color, pos)), false)) {
-        //     return false
-        // }
-
-        return true
+        return !positions.reduce((hasAttacksAgainst, position) =>
+            hasAttacksAgainst || (hasAttacksAgainst = board.currentMoves[oppositeColor(this.color)].hasMoveToPosition(position)),
+        false);
     }
 }

@@ -1,10 +1,11 @@
-import { KING } from './const.js'
+import { CHECKED, CHECKMATED, DRAW, KING, STALEMATED } from './const.js'
 
 export default class Player
 {
     color = null
     pieces = []
     capturedPieces = []
+    status = null
     king = null
 
     constructor (color) {
@@ -44,5 +45,25 @@ export default class Player
         }
 
         this.pieces.splice(index, 1)
+    }
+
+    clearStatus () {
+        this.status = null
+    }
+
+    setChecked () {
+        this.status = CHECKED
+    }
+
+    setCheckMated () {
+        this.status = CHECKMATED
+    }
+
+    setStalemated () {
+        this.status = STALEMATED
+    }
+
+    setDrawn () {
+        this.status = DRAW
     }
 }

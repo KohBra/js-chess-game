@@ -54,27 +54,4 @@ export default class MoveSet
     get length () {
         return this.moves.length
     }
-
-    show () {
-        console.log('%c   A    B    C    D    E    F    G    H', 'font-size:12px')
-        for (let rank = 1; rank <= boardSize; rank++) {
-            let row = `${rank}  `
-            let colors = []
-            for (let file = 1; file <= 8; file++) {
-                let moves = this.getMovesToPosition(new Position(rank, file))
-                if (moves.length === 0) {
-                    row += `%c-  `
-                    colors.push('grey')
-                    continue
-                }
-
-                // let hasAttack = moves.reduce((hasAttack, move) => hasAttack || (hasAttack = move.isAttack), false)
-                let hasAttack = false
-                row += `%c${hasAttack ? 'X' : 'M'}  `
-                colors.push(hasAttack ? 'red' : 'white')
-            }
-
-            console.log(row, ...colors.map(color => `color:${color};font-size:20px`))
-        }
-    }
 }

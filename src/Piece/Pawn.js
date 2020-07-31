@@ -13,13 +13,13 @@ export default class Pawn extends Piece
     type = PAWN
     originalRank = null
 
+    getValue () {
+        return 1
+    }
+
     constructor (position, color = null) {
         super(position, color)
         this.originalRank = position.rank
-    }
-
-    getCharacter () {
-        return '\u2659'
     }
 
     getDirection () {
@@ -28,7 +28,7 @@ export default class Pawn extends Piece
 
     getPinningMoves (board) {
         let direction = this.getDirection()
-        let moves = new Moveset
+        let moves = new MoveSet
 
         let attackLeft = new Position(this.position.rank + direction, this.position.file - 1)
         let attackRight = new Position(this.position.rank + direction, this.position.file + 1)
@@ -46,7 +46,7 @@ export default class Pawn extends Piece
 
     getPotentialMoves (board) {
         let direction = this.getDirection()
-        let moves = new Moveset
+        let moves = new MoveSet
 
         let attackLeft = new Position(this.position.rank + direction, this.position.file - 1)
         let attackRight = new Position(this.position.rank + direction, this.position.file + 1)

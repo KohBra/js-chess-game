@@ -7,18 +7,18 @@ export default class Bishop extends Piece
 {
     type = BISHOP
 
-    getCharacter () {
-        return '\u2657'
+    getValue () {
+        return 3
     }
 
     getPinningMoves (board) {
-        let moves = new Moveset
+        let moves = new MoveSet
         addPinVectors(getDiagonalVectors, this, moves, board)
         return moves
     }
 
     getPotentialMoves (board) {
-        let moves = new Moveset
+        let moves = new MoveSet
         addMoveVectors(getDiagonalVectors, this, moves, board)
         return moves
     }

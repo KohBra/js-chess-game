@@ -1,5 +1,6 @@
 import Game from './src/Game.js'
+import ConsoleGui from './ConsoleGui.js'
 
 +function (window) {
-    window.game = Game.start()
+    window.chess = ConsoleGui.start()
 }(window)

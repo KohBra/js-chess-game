@@ -6,10 +6,20 @@ import { Board } from './Board.js'
 import { oppositeColor } from './helpers.js'
 import Move from './Move.js'
 import SpecialMove from './Move/SpecialMove.js'
+import { Check, CheckMate, Draw, Stalemate } from './exception.js'
 
 export default class Game
 {
+    gameOver = false
+    turn = null
+    board = null
+    moveHistory = []
+
     static start () {
+        /** todo
+         *  detect draw
+         */
+
         let game = new Game
         game.nextTurn()
         return game
@@ -20,8 +30,6 @@ export default class Game
             [black]: this.newPlayer(black),
             [white]: this.newPlayer(white),
         }
-        this.turn = null
-        this.board = null
         this.resetBoard()
     }
 
@@ -79,10 +87,7 @@ export default class Game
     nextTurn () {
         this.turn = !this.turn || this.turn === white ? black : white
         this.board.clearEnPassant()
-        let moves = this.board.calculateMoves(this.currentPlayer())
-        moves.show()
-        this.board.show()
-        console.log(moves)
+        this.calculateMoves()
     }
 
     capturePiece (piece) {
@@ -101,10 +106,36 @@ export default class Game
         this.board.removePiece(piece)
     }
 
+    calculateMoves () {
+        try {
+            this.otherPlayer().clearStatus()
+            this.currentPlayer().clearStatus()
+            this.board.calculateMoves(this.currentPlayer())
+        } catch (e) {
+            if (e instanceof Check) {
+                this.currentPlayer().setChecked()
+            } else if (e instanceof CheckMate) {
+                this.currentPlayer().setCheckMated()
+                this.gameOver = true
+            } else if (e instanceof Stalemate) {
+                this.currentPlayer().setStalemated()
+                this.gameOver = true
+            } else if (e instanceof Draw) {
+                this.currentPlayer().setDrawn()
+                this.gameOver = true
+            }
+        }
+    }
+
     executeMove (move) {
+        if (this.gameOver) {
+            throw new Error(`Game is over. Cannot execute more moves`)
+        }
+
         if (move.piece.color !== this.currentPlayer().color) {
             throw new Error(`Cannot move other team's piece!`)
         }
+
         if (this.board.hasPieceAt(move.to)) {
             this.capturePiece(this.board.at(move.to))
         }
@@ -119,10 +150,15 @@ export default class Game
             this.board.executeMove(move)
         }
 
+        this.moveHistory.push(move.toHistory())
         this.nextTurn()
     }
 
     forceMove (fromRank, fromFile, toRank, toFile) {
+        if (this.gameOver) {
+            throw new Error(`Game is over. Cannot execute more moves`)
+        }
+
         let piece = this.board.at(fromRank, fromFile)
 
         if (!piece) {
@@ -136,7 +172,7 @@ export default class Game
         }
 
         this.board.executeMove(new Move(piece, new Position(toRank, toFile)))
-        this.board.show()
+        this.calculateMoves()
     }
 
     // debug stuff

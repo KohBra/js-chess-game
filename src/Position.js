@@ -8,4 +8,8 @@ export default class Position
     equals (position) {
         return this.rank === position.rank && this.file === position.file
     }
+
+    copy () {
+        return new Position(this.rank, this.file)
+    }
 }

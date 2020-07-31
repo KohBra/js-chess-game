@@ -7,19 +7,19 @@ export default class Queen extends Piece
 {
     type = QUEEN
 
-    getCharacter () {
-        return '\u2655'
+    getValue () {
+        return 9
     }
 
     getPinningMoves (board) {
-        let moves = new Moveset
+        let moves = new MoveSet
         addPinVectors(getCardinalVectors, this, moves, board)
         addPinVectors(getDiagonalVectors, this, moves, board)
         return moves
     }
 
     getPotentialMoves (board) {
-        let moves = new Moveset
+        let moves = new MoveSet
         addMoveVectors(getCardinalVectors, this, moves, board)
         addMoveVectors(getDiagonalVectors, this, moves, board)
         return moves
